@@ -1,3 +1,4 @@
+//src/store/editorStore.js
 import { create } from 'zustand'
 
 const initialTree = [

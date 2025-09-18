@@ -1,3 +1,4 @@
+//src/components/Navbar.jsx
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useEditorStore } from '../store/editorStore'
 
