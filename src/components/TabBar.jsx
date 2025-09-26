@@ -1,18 +1,29 @@
 import { useEditorStore } from '../store/editorStore'
 
-export default function TabBar() {
+export default function TabBar({ panelId }) {
   const tabs = useEditorStore((s) => s.openTabs)
-  const activeId = useEditorStore((s) => s.activeTabId)
-  const activateTab = useEditorStore((s) => s.activateTab)
+  const activeTabIdsPerPanel = useEditorStore((s) => s.activeTabIdsPerPanel)
+  const setActiveTabForPanel = useEditorStore((s) => s.setActiveTabForPanel)
   const closeTab = useEditorStore((s) => s.closeTab)
+
+  const activeId = activeTabIdsPerPanel[panelId] || null
+
+  // Filter unique tabs by id to prevent duplicates
+  const uniqueTabsMap = new Map()
+  tabs.forEach(t => {
+    if (!uniqueTabsMap.has(t.id)) {
+      uniqueTabsMap.set(t.id, t)
+    }
+  })
+  const uniqueTabs = Array.from(uniqueTabsMap.values())
 
   return (
     <div className="tabbar">
-      {tabs.map((t) => (
+      {uniqueTabs.map((t) => (
         <div
           key={t.id}
           className={`tab ${t.id === activeId ? 'active' : ''}`}
-          onClick={() => activateTab(t.id)}
+          onClick={() => setActiveTabForPanel(panelId, t.id)}
         >
           <span>{t.dirty ? `${t.name} *` : t.name}</span>
           <button

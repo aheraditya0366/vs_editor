@@ -1,4 +1,3 @@
-//src/store/editorStore.js
 import { create } from 'zustand'
 
 const initialTree = [
@@ -85,6 +84,17 @@ export const useEditorStore = create((set, get) => ({
   fileContentMap: initialFiles,
   openTabs: [], // [{ id, path, name, dirty? }]
   activeTabId: null,
+  activeTabIdsPerPanel: { // new state to track active tab per panel
+    single: null,
+    verticalSplitLeft: null,
+    verticalSplitRight: null,
+    horizontalSplitTop: null,
+    horizontalSplitBottom: null,
+    gridTopLeft: null,
+    gridTopRight: null,
+    gridBottomLeft: null,
+    gridBottomRight: null,
+  },
   rootDirectoryHandle: null,
   fileHandles: new Map(), // path -> FileSystemFileHandle
   dirtyMap: new Map(), // path -> boolean
@@ -92,7 +102,9 @@ export const useEditorStore = create((set, get) => ({
   history: [], // array of tab ids
   historyIndex: -1,
   sidebarVisible: true,
+  activeView: 'explorer', // 'explorer', 'search', 'sourceControl', 'runAndDebug', 'extensions', 'accounts'
   theme: (typeof window !== 'undefined' && localStorage.getItem('theme')) || 'dark',
+  layoutMode: 'single', // 'single', 'vertical-split', 'horizontal-split', 'grid'
   editorStatus: {
     lineNumber: 1,
     column: 1,
@@ -127,20 +139,35 @@ export const useEditorStore = create((set, get) => ({
   },
 
   openFile: async (path) => {
-    const name = path.split('/').pop()
-    const exists = get().openTabs.find((t) => t.id === path)
-    const nextTabs = exists ? get().openTabs : [...get().openTabs, { id: path, path, name }]
-    if (!get().fileContentMap.has(path) && get().fileHandles.has(path)) {
-      try {
-        const fh = get().fileHandles.get(path)
-        const text = await readHandleText(fh)
-        const map = new Map(get().fileContentMap)
-        map.set(path, text)
-        set({ fileContentMap: map })
-      } catch {}
+    const filePath = path
+    const name = filePath.split('/').pop()
+    const exists = get().openTabs.find((t) => t.id === filePath)
+    const nextTabs = exists ? get().openTabs : [...get().openTabs, { id: filePath, path: filePath, name }]
+    if (!get().fileContentMap.has(filePath)) {
+      if (get().fileHandles.has(filePath)) {
+        try {
+          const fh = get().fileHandles.get(filePath)
+          const text = await readHandleText(fh)
+          const map = new Map(get().fileContentMap)
+          map.set(filePath, text)
+          set({ fileContentMap: map })
+        } catch {}
+      } else {
+        // Fallback: try to fetch from server
+        try {
+          const response = await fetch(`/${filePath}`)
+          if (response.ok) {
+            const text = await response.text()
+            const map = new Map(get().fileContentMap)
+            map.set(filePath, text)
+            set({ fileContentMap: map })
+          }
+        } catch {}
+      }
     }
-    set({ openTabs: nextTabs, activeTabId: path })
-    get().pushHistory(path)
+    set({ openTabs: nextTabs, activeTabId: filePath })
+    get().pushHistory(filePath)
+    get().updatePanelsForLayout()
   },
 
   closeTab: (id) => {
@@ -153,6 +180,7 @@ export const useEditorStore = create((set, get) => ({
   activateTab: (id) => {
     set({ activeTabId: id })
     get().pushHistory(id)
+    get().updatePanelsForLayout()
   },
 
   getActiveContent: () => {
@@ -209,6 +237,7 @@ export const useEditorStore = create((set, get) => ({
       const idx = historyIndex - 1
       const id = history[idx]
       set({ historyIndex: idx, activeTabId: id })
+      get().updatePanelsForLayout()
     }
   },
   goForward: () => {
@@ -217,9 +246,45 @@ export const useEditorStore = create((set, get) => ({
       const idx = historyIndex + 1
       const id = history[idx]
       set({ historyIndex: idx, activeTabId: id })
+      get().updatePanelsForLayout()
     }
   },
   toggleSidebar: () => set({ sidebarVisible: !get().sidebarVisible }),
+
+  setActiveView: (view) => set({ activeView: view }),
+
+  setSidebarVisible: (visible) => set({ sidebarVisible: visible }),
+
+  setLayoutMode: (mode) => {
+    set({ layoutMode: mode })
+    get().updatePanelsForLayout()
+  },
+
+  setActiveTabForPanel: (panel, tabId) => {
+    const activeTabIdsPerPanel = { ...get().activeTabIdsPerPanel, [panel]: tabId }
+    set({ activeTabIdsPerPanel })
+  },
+
+  updatePanelsForLayout: () => {
+    const activeTabId = get().activeTabId
+    const layoutMode = get().layoutMode
+    const activeTabIdsPerPanel = { ...get().activeTabIdsPerPanel }
+    if (layoutMode === 'single') {
+      activeTabIdsPerPanel.single = activeTabId
+    } else if (layoutMode === 'vertical-split') {
+      activeTabIdsPerPanel.verticalSplitLeft = activeTabId
+      activeTabIdsPerPanel.verticalSplitRight = activeTabId
+    } else if (layoutMode === 'horizontal-split') {
+      activeTabIdsPerPanel.horizontalSplitTop = activeTabId
+      activeTabIdsPerPanel.horizontalSplitBottom = activeTabId
+    } else if (layoutMode === 'grid') {
+      activeTabIdsPerPanel.gridTopLeft = activeTabId
+      activeTabIdsPerPanel.gridTopRight = activeTabId
+      activeTabIdsPerPanel.gridBottomLeft = activeTabId
+      activeTabIdsPerPanel.gridBottomRight = activeTabId
+    }
+    set({ activeTabIdsPerPanel })
+  },
 
   toggleTheme: () => {
     const next = get().theme === 'dark' ? 'light' : 'dark'
@@ -242,5 +307,154 @@ export const useEditorStore = create((set, get) => ({
     walk(get().tree, '')
     return out
   },
+
+  // Terminal state and actions
+  terminalTabs: [{ id: 'terminal-1', name: 'Terminal 1', output: [], cwd: '/' }],
+  activeTerminalId: 'terminal-1',
+  terminalVisible: false,
+
+  addTerminalTab: () => {
+    const tabs = get().terminalTabs
+    const newId = `terminal-${tabs.length + 1}`
+    const newTab = { id: newId, name: `Terminal ${tabs.length + 1}`, output: [], cwd: '/' }
+    set({ terminalTabs: [...tabs, newTab], activeTerminalId: newId })
+  },
+
+  closeTerminalTab: (id) => {
+    const tabs = get().terminalTabs.filter((t) => t.id !== id)
+    let nextActive = get().activeTerminalId
+    if (id === nextActive) nextActive = tabs.length ? tabs[tabs.length - 1].id : null
+    set({ terminalTabs: tabs, activeTerminalId: nextActive })
+  },
+
+  activateTerminalTab: (id) => {
+    set({ activeTerminalId: id })
+  },
+
+  toggleTerminal: () => set({ terminalVisible: !get().terminalVisible }),
+
+  updateTerminalCwd: (id, newCwd) => {
+    set(state => ({
+      terminalTabs: state.terminalTabs.map(t => t.id === id ? { ...t, cwd: newCwd } : t)
+    }))
+  },
+
+  listFilesInDir: (dir) => {
+    const out = []
+    const walk = (nodes, prefix) => {
+      nodes.forEach(n => {
+        if (n.type === 'file') {
+          out.push(n.name)
+        } else if (n.children) {
+          out.push(n.name + '/')
+        }
+      })
+    }
+    // Find the dir in tree
+    const findDir = (nodes, path) => {
+      for (const n of nodes) {
+        if (n.id === path) return n.children || []
+        if (n.children) {
+          const found = findDir(n.children, path)
+          if (found) return found
+        }
+      }
+      return []
+    }
+    const children = findDir(get().tree, dir)
+    walk(children, dir)
+    return out
+  },
+
+  runCommand: (command, terminalId) => {
+    const tab = get().terminalTabs.find(t => t.id === terminalId)
+    if (!tab) return 'Terminal not found'
+    const cwd = tab.cwd
+    const args = command.split(' ')
+    const cmd = args[0].toLowerCase()
+    let output = ''
+
+    switch (cmd) {
+      case 'help':
+        output = 'Available commands:\n  help - Show this help\n  echo <text> - Echo text\n  ls - List files\n  pwd - Print working directory\n  clear - Clear terminal\n  date - Show current date\n  cd <dir> - Change directory\n  mkdir <dir> - Create directory\n  touch <file> - Create file\n  cat <file> - Display file contents'
+        break
+      case 'echo':
+        output = args.slice(1).join(' ')
+        break
+      case 'ls':
+        const files = get().listFilesInDir(cwd)
+        output = files.length === 0 ? 'No files found' : files.join('  ')
+        break
+      case 'pwd':
+        output = cwd
+        break
+      case 'clear':
+        output = '' // Special case, handled in component
+        break
+      case 'date':
+        output = new Date().toString()
+        break
+      case 'cd':
+        if (args.length < 2) {
+          output = 'Usage: cd <directory>'
+        } else {
+          const target = args[1]
+          if (target === '..') {
+            if (cwd !== '/') {
+              const parts = cwd.split('/').filter(Boolean)
+              parts.pop()
+              const newCwd = '/' + parts.join('/')
+              get().updateTerminalCwd(terminalId, newCwd === '/' ? '/' : newCwd + '/')
+              output = ''
+            } else {
+              output = ''
+            }
+          } else {
+            const files = get().listFilesInDir(cwd)
+            if (files.includes(target + '/')) {
+              let newCwd = cwd
+              if (!newCwd.endsWith('/')) newCwd += '/'
+              newCwd += target + '/'
+              get().updateTerminalCwd(terminalId, newCwd)
+              output = ''
+            } else {
+              output = `cd: no such file or directory: ${target}`
+            }
+          }
+        }
+        break
+      case 'mkdir':
+        if (args.length < 2) {
+          output = 'Usage: mkdir <directory>'
+        } else {
+          output = `Created directory: ${args[1]}`
+        }
+        break
+      case 'touch':
+        if (args.length < 2) {
+          output = 'Usage: touch <file>'
+        } else {
+          output = `Created file: ${args[1]}`
+        }
+        break
+      case 'cat':
+        if (args.length < 2) {
+          output = 'Usage: cat <file>'
+        } else {
+          const fileName = args[1]
+          const files = get().listFilesInDir(cwd)
+          if (files.includes(fileName)) {
+            output = `Contents of ${fileName}:\n[File contents would be displayed here]`
+          } else {
+            output = `cat: ${fileName}: No such file or directory`
+          }
+        }
+        break
+      default:
+        output = `Command not found: ${cmd}\nType 'help' for available commands.`
+    }
+    return output
+  },
 }))
+
 

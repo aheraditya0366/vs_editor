@@ -1,20 +1,19 @@
 import Editor from '@monaco-editor/react'
 import { useEditorStore } from '../store/editorStore'
 
-export default function CodeEditor() {
-  const activeId = useEditorStore((s) => s.activeTabId)
-  const value = useEditorStore((s) => s.getActiveContent())
+export default function CodeEditor({ tabId }) {
+  const value = useEditorStore((s) => s.fileContentMap.get(tabId) ?? '')
   const update = useEditorStore((s) => s.updateActiveContent)
   const save = useEditorStore((s) => s.saveActiveFile)
   const setStatus = useEditorStore((s) => s.updateEditorStatus)
   const theme = useEditorStore((s) => s.theme)
 
   const language = (() => {
-    if (!activeId) return 'javascript'
-    if (activeId.endsWith('.jsx')) return 'javascript'
-    if (activeId.endsWith('.js')) return 'javascript'
-    if (activeId.endsWith('.css')) return 'css'
-    if (activeId.endsWith('.html')) return 'html'
+    if (!tabId) return 'javascript'
+    if (tabId.endsWith('.jsx')) return 'javascript'
+    if (tabId.endsWith('.js')) return 'javascript'
+    if (tabId.endsWith('.css')) return 'css'
+    if (tabId.endsWith('.html')) return 'html'
     return 'plaintext'
   })()
 
@@ -25,7 +24,7 @@ export default function CodeEditor() {
         theme={theme === 'dark' ? 'vs-dark' : 'light'}
         language={language}
         value={value}
-        onChange={(v) => update(v ?? '')}
+        onChange={(v) => update(v ?? '', tabId)}
         options={{
           minimap: { enabled: false },
           fontSize: 14,
