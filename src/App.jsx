@@ -142,10 +142,10 @@ function App() {
   }
 
   return (
-    <div className={`app theme-${theme} ${terminalVisible ? 'terminal-visible' : ''} ${isMobile ? 'mobile' : ''}`}>
+    <div className={`app theme-${theme} ${terminalVisible ? 'terminal-visible' : ''} ${isMobile ? 'mobile' : ''} ${sidebarVisible ? 'sidebar-open' : 'sidebar-hidden'}`}>
       <Navbar />
       <ActivityBar onToggleSidebar={handleToggleSidebar} />
-      <aside className={`sidebar ${sidebarVisible ? '' : 'hidden'}`}>
+      <aside className={`sidebar ${sidebarVisible ? 'open' : 'hidden'}`}>
         {activeView === 'explorer' && <Explorer />}
         {activeView === 'search' && <Search />}
         {activeView === 'sourceControl' && <SourceControl />}

@@ -383,6 +383,11 @@
     z-index: 30;
     transform: translateX(-100%);
   }
+  /* On mobile, keep sidebar in DOM when hidden to enable slide animation */
+  .sidebar.hidden {
+    display: block;
+    transform: translateX(-100%);
+  }
   .sidebar.open {
     transform: translateX(0);
   }
@@ -508,6 +513,16 @@
 
 .app:not(.terminal-visible) .terminal-container {
   display: none;
+}
+
+.app.sidebar-open .terminal-container {
+  left: 308px;
+}
+.app.sidebar-hidden .terminal-container {
+  left: 48px;
+}
+.app.mobile .terminal-container {
+  left: 0;
 }
 
 .terminal-resizer {
