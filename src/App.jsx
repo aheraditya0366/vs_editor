@@ -93,11 +93,11 @@ function App() {
           <div style={{ display: 'flex', height: '100%' }}>
             <div style={{ flex: 1, borderRight: '1px solid #2a2a2a', display: 'flex', flexDirection: 'column' }}>
               <TabBar panelId="verticalSplitLeft" />
-              <CodeEditor tabId={activeTabIdsPerPanel.verticalSplitLeft} />
+              <CodeEditor tabId={activeTabIdsPerPanel.verticalSplitLeft || activeTabId} />
             </div>
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
               <TabBar panelId="verticalSplitRight" />
-              <CodeEditor tabId={activeTabIdsPerPanel.verticalSplitRight} />
+              <CodeEditor tabId={activeTabIdsPerPanel.verticalSplitRight || activeTabId} />
             </div>
           </div>
         )
@@ -106,11 +106,11 @@ function App() {
           <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
             <div style={{ flex: 1, borderBottom: '1px solid #2a2a2a', display: 'flex', flexDirection: 'column' }}>
               <TabBar panelId="horizontalSplitTop" />
-              <CodeEditor tabId={activeTabIdsPerPanel.horizontalSplitTop} />
+              <CodeEditor tabId={activeTabIdsPerPanel.horizontalSplitTop || activeTabId} />
             </div>
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
               <TabBar panelId="horizontalSplitBottom" />
-              <CodeEditor tabId={activeTabIdsPerPanel.horizontalSplitBottom} />
+              <CodeEditor tabId={activeTabIdsPerPanel.horizontalSplitBottom || activeTabId} />
             </div>
           </div>
         )
@@ -125,24 +125,24 @@ function App() {
           }}>
             <div style={{ borderRight: '1px solid #2a2a2a', borderBottom: '1px solid #2a2a2a', display: 'flex', flexDirection: 'column' }}>
               <TabBar panelId="gridTopLeft" />
-              <CodeEditor tabId={activeTabIdsPerPanel.gridTopLeft} />
+              <CodeEditor tabId={activeTabIdsPerPanel.gridTopLeft || activeTabId} />
             </div>
             <div style={{ borderBottom: '1px solid #2a2a2a', display: 'flex', flexDirection: 'column' }}>
               <TabBar panelId="gridTopRight" />
-              <CodeEditor tabId={activeTabIdsPerPanel.gridTopRight} />
+              <CodeEditor tabId={activeTabIdsPerPanel.gridTopRight || activeTabId} />
             </div>
             <div style={{ borderRight: '1px solid #2a2a2a', display: 'flex', flexDirection: 'column' }}>
               <TabBar panelId="gridBottomLeft" />
-              <CodeEditor tabId={activeTabIdsPerPanel.gridBottomLeft} />
+              <CodeEditor tabId={activeTabIdsPerPanel.gridBottomLeft || activeTabId} />
             </div>
             <div style={{ display: 'flex', flexDirection: 'column' }}>
               <TabBar panelId="gridBottomRight" />
-              <CodeEditor tabId={activeTabIdsPerPanel.gridBottomRight} />
+              <CodeEditor tabId={activeTabIdsPerPanel.gridBottomRight || activeTabId} />
             </div>
           </div>
         )
       default:
-        return <CodeEditor tabId={activeTabIdsPerPanel.single} />
+        return <CodeEditor tabId={activeTabIdsPerPanel.single || activeTabId} />
     }
   }
 
