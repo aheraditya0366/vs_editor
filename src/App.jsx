@@ -13,7 +13,6 @@ import Extensions from './components/Extensions'
 import Accounts from './components/Accounts'
 import { useEditorStore } from './store/editorStore.js'
 import { useState, useEffect, useRef } from 'react'
-import LayoutButtons from './components/LayoutButtons'
 
 function App() {
   const sidebarVisible = useEditorStore((s) => s.sidebarVisible)
