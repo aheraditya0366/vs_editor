@@ -151,6 +151,7 @@ function QuickOpen() {
 export default function Navbar() {
   const openFolder = useEditorStore((s) => s.openFolder)
   const save = useEditorStore((s) => s.saveActiveFile)
+  const saveAll = useEditorStore((s) => s.saveAllFiles)
   const toggleSidebar = useEditorStore((s) => s.toggleSidebar)
   const toggleTheme = useEditorStore((s) => s.toggleTheme)
   const activeId = useEditorStore((s) => s.activeTabId)
@@ -163,11 +164,15 @@ export default function Navbar() {
         e.preventDefault()
         save()
       }
+      if (e.key.toLowerCase() === 's' && (e.metaKey || e.ctrlKey) && e.shiftKey) {
+        e.preventDefault()
+        saveAll()
+      }
     }
 
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [save])
+  }, [save, saveAll])
 
   const layoutButtons = [
     { mode: 'single', title: 'Single Panel', icon: '▭' },
@@ -198,6 +203,7 @@ export default function Navbar() {
         <button title="Toggle Sidebar" onClick={toggleSidebar} className="icon-btn" aria-label="Toggle Sidebar">☰</button>
         <button onClick={openFolder} className="primary-btn">Open</button>
         <button onClick={save} disabled={!activeId} className="primary-btn">Save</button>
+        <button onClick={saveAll} className="primary-btn" title="Save All (Ctrl+Shift+S)">Save All</button>
       </div>
     </div>
   )

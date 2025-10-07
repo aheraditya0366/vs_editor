@@ -7,6 +7,7 @@ import StatusBar from './components/StatusBar.jsx'
 import Terminal from './components/Terminal.jsx'
 import ActivityBar from './components/ActivityBar.jsx'
 import SourceControl from './components/SourceControl.jsx'
+import Search from './components/Search.jsx'
 import RunAndDebug from './components/RunAndDebug.jsx'
 import Extensions from './components/Extensions.jsx'
 import Accounts from './components/Accounts.jsx'
@@ -144,20 +145,7 @@ function App() {
       <ActivityBar onToggleSidebar={handleToggleSidebar} />
       <aside className={`sidebar ${sidebarVisible ? '' : 'hidden'}`}>
         {activeView === 'explorer' && <Explorer />}
-        {activeView === 'search' && (
-          <div style={{ padding: 16, color: '#888', fontSize: 14 }}>
-            <div style={{ fontWeight: 600, marginBottom: 12, color: '#cccccc' }}>
-              Search
-            </div>
-            <div style={{ textAlign: 'center', marginTop: 40 }}>
-              <div style={{ fontSize: 48, marginBottom: 16 }}>🔍</div>
-              <div style={{ marginBottom: 8 }}>Search functionality</div>
-              <div style={{ fontSize: 12, color: '#666' }}>
-                Use Ctrl+Shift+F to search in files
-              </div>
-            </div>
-          </div>
-        )}
+        {activeView === 'search' && <Search />}
         {activeView === 'sourceControl' && <SourceControl />}
         {activeView === 'runAndDebug' && <RunAndDebug />}
         {activeView === 'extensions' && <Extensions />}

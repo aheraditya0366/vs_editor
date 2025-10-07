@@ -84,6 +84,8 @@ export const useEditorStore = create((set, get) => ({
   fileContentMap: initialFiles,
   openTabs: [], // [{ id, path, name, dirty? }]
   activeTabId: null,
+  // Editor jump target, consumed by CodeEditor
+  pendingCursorLocation: null, // { id, lineNumber, column }
   activeTabIdsPerPanel: { // new state to track active tab per panel
     single: null,
     verticalSplitLeft: null,
@@ -215,6 +217,25 @@ export const useEditorStore = create((set, get) => ({
     set({ dirtyMap: dirty, openTabs: tabs })
   },
 
+  // Save all dirty files with underlying FileSystem handles
+  saveAllFiles: async () => {
+    const dirtyMap = new Map(get().dirtyMap)
+    const updatedTabs = get().openTabs.map((t) => ({ ...t }))
+    for (const [path, isDirty] of dirtyMap.entries()) {
+      if (!isDirty) continue
+      const content = get().fileContentMap.get(path) ?? ''
+      if (get().fileHandles.has(path)) {
+        try {
+          await writeHandleText(get().fileHandles.get(path), content)
+          dirtyMap.set(path, false)
+          const tabIndex = updatedTabs.findIndex((tt) => tt.id === path)
+          if (tabIndex >= 0) updatedTabs[tabIndex].dirty = false
+        } catch {}
+      }
+    }
+    set({ dirtyMap, openTabs: updatedTabs })
+  },
+
   updateEditorStatus: (partial) => {
     set({ editorStatus: { ...get().editorStatus, ...partial } })
   },
@@ -286,6 +307,17 @@ export const useEditorStore = create((set, get) => ({
     set({ activeTabIdsPerPanel })
   },
 
+  // Open a file and request the editor to jump to a location
+  openFileAt: async (path, lineNumber = 1, column = 1) => {
+    set({ pendingCursorLocation: { id: path, lineNumber, column } })
+    await get().openFile(path)
+  },
+
+  // Reset pending cursor request after editor consumes it
+  consumePendingCursorLocation: () => {
+    set({ pendingCursorLocation: null })
+  },
+
   toggleTheme: () => {
     const next = get().theme === 'dark' ? 'light' : 'dark'
     set({ theme: next })
@@ -306,6 +338,67 @@ export const useEditorStore = create((set, get) => ({
     }
     walk(get().tree, '')
     return out
+  },
+
+  // Search across files in the current tree
+  // Returns: [{ path, lineNumber, column, lineText }]
+  searchFiles: async (query, options = {}) => {
+    const { caseSensitive = false, useRegex = false, maxResults = 500 } = options
+    if (!query) return []
+
+    const files = get().listAllFiles()
+    const results = []
+    let pattern
+    try {
+      pattern = useRegex ? new RegExp(query, caseSensitive ? 'g' : 'gi') : null
+    } catch {
+      // Invalid regex; treat as plain text
+      pattern = null
+    }
+
+    const getContent = async (path) => {
+      if (get().fileContentMap.has(path)) {
+        return get().fileContentMap.get(path)
+      }
+      if (get().fileHandles.has(path)) {
+        try {
+          const fh = get().fileHandles.get(path)
+          return await readHandleText(fh)
+        } catch {}
+      }
+      try {
+        const resp = await fetch(`/${path}`)
+        if (resp.ok) return await resp.text()
+      } catch {}
+      return ''
+    }
+
+    for (const file of files) {
+      if (results.length >= maxResults) break
+      const text = await getContent(file.path)
+      if (!text) continue
+      const lines = text.split(/\r?\n/)
+      for (let i = 0; i < lines.length; i++) {
+        if (results.length >= maxResults) break
+        const lineText = lines[i]
+        if (useRegex && pattern) {
+          pattern.lastIndex = 0
+          const match = pattern.exec(lineText)
+          if (match) {
+            const col = (match.index ?? 0) + 1
+            results.push({ path: file.path, lineNumber: i + 1, column: col, lineText })
+          }
+        } else {
+          const haystack = caseSensitive ? lineText : lineText.toLowerCase()
+          const needle = caseSensitive ? query : query.toLowerCase()
+          const idx = haystack.indexOf(needle)
+          if (idx >= 0) {
+            results.push({ path: file.path, lineNumber: i + 1, column: idx + 1, lineText })
+          }
+        }
+      }
+    }
+    return results
   },
 
   // Terminal state and actions
