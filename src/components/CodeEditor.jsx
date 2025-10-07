@@ -37,6 +37,14 @@ export default function CodeEditor({ tabId }) {
     }
   }, [pendingCursor, tabId, consumePendingCursor])
 
+  if (!tabId) {
+    return (
+      <div className="editor" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#888' }}>
+        <div>No file open. Use Explorer or Quick Open to select a file.</div>
+      </div>
+    )
+  }
+
   return (
     <div className="editor">
       <Editor

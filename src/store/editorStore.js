@@ -172,6 +172,7 @@ export const useEditorStore = create((set, get) => ({
   history: [], // array of tab ids
   historyIndex: -1,
   sidebarVisible: true,
+  sidebarWidth: 260,
   activeView: 'explorer', // 'explorer', 'search', 'sourceControl', 'runAndDebug', 'extensions', 'accounts'
   theme: (typeof window !== 'undefined' && localStorage.getItem('theme')) || 'dark',
   layoutMode: 'single', // 'single', 'vertical-split', 'horizontal-split', 'grid'
@@ -269,23 +270,22 @@ export const useEditorStore = create((set, get) => ({
     return get().fileContentMap.get(id) ?? ''
   },
 
-  updateActiveContent: (newValue) => {
-    const id = get().activeTabId
+  updateActiveContent: (newValue, idOverride) => {
+    const id = idOverride || get().activeTabId
     if (!id) return
-    const map = new Map(get().fileContentMap)
-    map.set(id, newValue)
-    const dirty = new Map(get().dirtyMap)
-    dirty.set(id, true)
-    const tabs = get().openTabs.map((t) => (t.id === id ? { ...t, dirty: true } : t))
-    set({ fileContentMap: map, dirtyMap: dirty, openTabs: tabs })
-    // Schedule autosave if enabled
+    const fileContentMap = new Map(get().fileContentMap)
+    fileContentMap.set(id, newValue)
+    const dirtyMap = new Map(get().dirtyMap)
+    dirtyMap.set(id, true)
+    const openTabs = get().openTabs.map((t) => (t.id === id ? { ...t, dirty: true } : t))
+    set({ fileContentMap, dirtyMap, openTabs })
     if (get().autosaveEnabled) {
       get().scheduleAutosave(id)
     }
   },
 
-  saveActiveFile: async () => {
-    const id = get().activeTabId
+  saveActiveFile: async (idArg) => {
+    const id = idArg || get().activeTabId
     if (!id) return
     const content = get().fileContentMap.get(id) ?? ''
     if (get().fileHandles.has(id)) {
@@ -356,6 +356,14 @@ export const useEditorStore = create((set, get) => ({
   },
   toggleSidebar: () => set({ sidebarVisible: !get().sidebarVisible }),
 
+  setSidebarWidth: (widthPx) => {
+    const minWidth = 180
+    const maxWidth = 600
+    const clamped = Math.max(minWidth, Math.min(maxWidth, Math.round(widthPx)))
+    set({ sidebarWidth: clamped })
+    get().saveSession()
+  },
+
   setActiveView: (view) => set({ activeView: view }),
 
   setSidebarVisible: (visible) => set({ sidebarVisible: visible }),
@@ -368,26 +376,43 @@ export const useEditorStore = create((set, get) => ({
 
   setActiveTabForPanel: (panel, tabId) => {
     const activeTabIdsPerPanel = { ...get().activeTabIdsPerPanel, [panel]: tabId }
-    set({ activeTabIdsPerPanel })
+    set({ activeTabIdsPerPanel, activeTabId: tabId })
+    get().pushHistory(tabId)
+    get().saveSession()
+  },
+
+  // Set the globally active tab without affecting per-panel selections
+  setActiveTabId: (tabId) => {
+    if (!tabId) return
+    set({ activeTabId: tabId })
+    get().pushHistory(tabId)
+    get().saveSession()
   },
 
   updatePanelsForLayout: () => {
     const activeTabId = get().activeTabId
     const layoutMode = get().layoutMode
     const activeTabIdsPerPanel = { ...get().activeTabIdsPerPanel }
+    const ensure = (key) => {
+      if (!activeTabIdsPerPanel[key]) {
+        // Seed with active tab or fallback to last opened tab
+        const fallback = activeTabId || (get().openTabs.length ? get().openTabs[get().openTabs.length - 1].id : null)
+        if (fallback) activeTabIdsPerPanel[key] = fallback
+      }
+    }
     if (layoutMode === 'single') {
-      activeTabIdsPerPanel.single = activeTabId
+      ensure('single')
     } else if (layoutMode === 'vertical-split') {
-      activeTabIdsPerPanel.verticalSplitLeft = activeTabId
-      activeTabIdsPerPanel.verticalSplitRight = activeTabId
+      ensure('verticalSplitLeft')
+      ensure('verticalSplitRight')
     } else if (layoutMode === 'horizontal-split') {
-      activeTabIdsPerPanel.horizontalSplitTop = activeTabId
-      activeTabIdsPerPanel.horizontalSplitBottom = activeTabId
+      ensure('horizontalSplitTop')
+      ensure('horizontalSplitBottom')
     } else if (layoutMode === 'grid') {
-      activeTabIdsPerPanel.gridTopLeft = activeTabId
-      activeTabIdsPerPanel.gridTopRight = activeTabId
-      activeTabIdsPerPanel.gridBottomLeft = activeTabId
-      activeTabIdsPerPanel.gridBottomRight = activeTabId
+      ensure('gridTopLeft')
+      ensure('gridTopRight')
+      ensure('gridBottomLeft')
+      ensure('gridBottomRight')
     }
     set({ activeTabIdsPerPanel })
   },
@@ -782,10 +807,7 @@ export const useEditorStore = create((set, get) => ({
       // Only save if still dirty
       const dirty = get().dirtyMap.get(fileId)
       if (dirty) {
-        const prevActive = get().activeTabId
-        set({ activeTabId: fileId })
-        get().saveActiveFile()
-        set({ activeTabId: prevActive })
+        get().saveActiveFile(fileId)
       }
     }, get().autosaveDebounceMs)
     timers.set(fileId, timeout)
@@ -799,6 +821,7 @@ export const useEditorStore = create((set, get) => ({
         activeTabId: get().activeTabId,
         layoutMode: get().layoutMode,
         sidebarVisible: get().sidebarVisible,
+        sidebarWidth: get().sidebarWidth,
         theme: get().theme,
         autosaveEnabled: get().autosaveEnabled,
       }
@@ -813,6 +836,7 @@ export const useEditorStore = create((set, get) => ({
       if (typeof data.autosaveEnabled === 'boolean') set({ autosaveEnabled: data.autosaveEnabled })
       if (data.layoutMode) set({ layoutMode: data.layoutMode })
       if (typeof data.sidebarVisible === 'boolean') set({ sidebarVisible: data.sidebarVisible })
+      if (typeof data.sidebarWidth === 'number' && !Number.isNaN(data.sidebarWidth)) set({ sidebarWidth: data.sidebarWidth })
       if (data.theme) set({ theme: data.theme })
       if (Array.isArray(data.openTabs) && data.openTabs.length > 0) {
         for (let i = 0; i < data.openTabs.length; i++) {

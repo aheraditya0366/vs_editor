@@ -1,19 +1,18 @@
 import './App.css'
-import Explorer from './components/Explorer.jsx'
-import TabBar from './components/TabBar.jsx'
-import CodeEditor from './components/CodeEditor.jsx'
-import Navbar from './components/Navbar.jsx'
-import StatusBar from './components/StatusBar.jsx'
-import Terminal from './components/Terminal.jsx'
-import ActivityBar from './components/ActivityBar.jsx'
-import SourceControl from './components/SourceControl.jsx'
-import Search from './components/Search.jsx'
-import RunAndDebug from './components/RunAndDebug.jsx'
-import Extensions from './components/Extensions.jsx'
-import Accounts from './components/Accounts.jsx'
+import Explorer from './components/Explorer'
+import TabBar from './components/TabBar'
+import CodeEditor from './components/CodeEditor'
+import Navbar from './components/Navbar'
+import StatusBar from './components/StatusBar'
+import Terminal from './components/Terminal'
+import ActivityBar from './components/ActivityBar'
+import SourceControl from './components/SourceControl'
+import Search from './components/Search'
+import RunAndDebug from './components/RunAndDebug'
+import Extensions from './components/Extensions'
+import Accounts from './components/Accounts'
 import { useEditorStore } from './store/editorStore.js'
-import { useState, useEffect } from 'react'
-import LayoutButtons from './components/LayoutButtons.jsx'
+import { useState, useEffect, useRef } from 'react'
 
 function App() {
   const sidebarVisible = useEditorStore((s) => s.sidebarVisible)
@@ -27,6 +26,11 @@ function App() {
   const openFile = useEditorStore((s) => s.openFile)
   const updatePanelsForLayout = useEditorStore((s) => s.updatePanelsForLayout)
   const [isMobile, setIsMobile] = useState(false)
+  const sidebarWidth = useEditorStore((s) => s.sidebarWidth)
+  const setSidebarWidth = useEditorStore((s) => s.setSidebarWidth)
+  const isResizingRef = useRef(false)
+  const startXRef = useRef(0)
+  const startWidthRef = useRef(0)
 
   useEffect(() => {
     // Load previous session (tabs/layout/theme/autosave) on first mount
@@ -88,11 +92,11 @@ function App() {
           <div style={{ display: 'flex', height: '100%' }}>
             <div style={{ flex: 1, borderRight: '1px solid #2a2a2a', display: 'flex', flexDirection: 'column' }}>
               <TabBar panelId="verticalSplitLeft" />
-              <CodeEditor tabId={activeTabIdsPerPanel.verticalSplitLeft} />
+              <CodeEditor tabId={activeTabIdsPerPanel.verticalSplitLeft || activeTabId} />
             </div>
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
               <TabBar panelId="verticalSplitRight" />
-              <CodeEditor tabId={activeTabIdsPerPanel.verticalSplitRight} />
+              <CodeEditor tabId={activeTabIdsPerPanel.verticalSplitRight || activeTabId} />
             </div>
           </div>
         )
@@ -101,11 +105,11 @@ function App() {
           <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
             <div style={{ flex: 1, borderBottom: '1px solid #2a2a2a', display: 'flex', flexDirection: 'column' }}>
               <TabBar panelId="horizontalSplitTop" />
-              <CodeEditor tabId={activeTabIdsPerPanel.horizontalSplitTop} />
+              <CodeEditor tabId={activeTabIdsPerPanel.horizontalSplitTop || activeTabId} />
             </div>
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
               <TabBar panelId="horizontalSplitBottom" />
-              <CodeEditor tabId={activeTabIdsPerPanel.horizontalSplitBottom} />
+              <CodeEditor tabId={activeTabIdsPerPanel.horizontalSplitBottom || activeTabId} />
             </div>
           </div>
         )
@@ -120,38 +124,74 @@ function App() {
           }}>
             <div style={{ borderRight: '1px solid #2a2a2a', borderBottom: '1px solid #2a2a2a', display: 'flex', flexDirection: 'column' }}>
               <TabBar panelId="gridTopLeft" />
-              <CodeEditor tabId={activeTabIdsPerPanel.gridTopLeft} />
+              <CodeEditor tabId={activeTabIdsPerPanel.gridTopLeft || activeTabId} />
             </div>
             <div style={{ borderBottom: '1px solid #2a2a2a', display: 'flex', flexDirection: 'column' }}>
               <TabBar panelId="gridTopRight" />
-              <CodeEditor tabId={activeTabIdsPerPanel.gridTopRight} />
+              <CodeEditor tabId={activeTabIdsPerPanel.gridTopRight || activeTabId} />
             </div>
             <div style={{ borderRight: '1px solid #2a2a2a', display: 'flex', flexDirection: 'column' }}>
               <TabBar panelId="gridBottomLeft" />
-              <CodeEditor tabId={activeTabIdsPerPanel.gridBottomLeft} />
+              <CodeEditor tabId={activeTabIdsPerPanel.gridBottomLeft || activeTabId} />
             </div>
             <div style={{ display: 'flex', flexDirection: 'column' }}>
               <TabBar panelId="gridBottomRight" />
-              <CodeEditor tabId={activeTabIdsPerPanel.gridBottomRight} />
+              <CodeEditor tabId={activeTabIdsPerPanel.gridBottomRight || activeTabId} />
             </div>
           </div>
         )
       default:
-        return <CodeEditor tabId={activeTabIdsPerPanel.single} />
+        return <CodeEditor tabId={activeTabIdsPerPanel.single || activeTabId} />
     }
   }
 
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      if (!isResizingRef.current) return
+      const dx = e.clientX - startXRef.current
+      const newWidth = startWidthRef.current + dx
+      setSidebarWidth(newWidth)
+    }
+    const handleMouseUp = () => {
+      if (isResizingRef.current) {
+        isResizingRef.current = false
+      }
+    }
+    window.addEventListener('mousemove', handleMouseMove)
+    window.addEventListener('mouseup', handleMouseUp)
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [setSidebarWidth])
+
   return (
-    <div className={`app theme-${theme} ${terminalVisible ? 'terminal-visible' : ''} ${isMobile ? 'mobile' : ''}`}>
+    <div
+      className={`app theme-${theme} ${terminalVisible ? 'terminal-visible' : ''} ${isMobile ? 'mobile' : ''} ${sidebarVisible ? 'sidebar-open' : 'sidebar-hidden'}`}
+      style={{ '--sidebar-width': `${sidebarWidth}px`, '--activity-bar-width': '48px' }}
+    >
       <Navbar />
       <ActivityBar onToggleSidebar={handleToggleSidebar} />
-      <aside className={`sidebar ${sidebarVisible ? '' : 'hidden'}`}>
+      <aside className={`sidebar ${sidebarVisible ? 'open' : 'hidden'}`}>
         {activeView === 'explorer' && <Explorer />}
         {activeView === 'search' && <Search />}
         {activeView === 'sourceControl' && <SourceControl />}
         {activeView === 'runAndDebug' && <RunAndDebug />}
         {activeView === 'extensions' && <Extensions />}
         {activeView === 'accounts' && <Accounts />}
+        {!isMobile && (
+          <div
+            className="sidebar-resizer"
+            onMouseDown={(e) => {
+              isResizingRef.current = true
+              startXRef.current = e.clientX
+              startWidthRef.current = sidebarWidth
+            }}
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize sidebar"
+          />
+        )}
       </aside>
       <section className="workbench">
         {renderLayout()}
