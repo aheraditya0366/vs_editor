@@ -1,4 +1,5 @@
 import Editor from '@monaco-editor/react'
+import { useEffect, useRef } from 'react'
 import { useEditorStore } from '../store/editorStore'
 
 export default function CodeEditor({ tabId }) {
@@ -7,6 +8,9 @@ export default function CodeEditor({ tabId }) {
   const save = useEditorStore((s) => s.saveActiveFile)
   const setStatus = useEditorStore((s) => s.updateEditorStatus)
   const theme = useEditorStore((s) => s.theme)
+  const pendingCursor = useEditorStore((s) => s.pendingCursorLocation)
+  const consumePendingCursor = useEditorStore((s) => s.consumePendingCursorLocation)
+  const editorRef = useRef(null)
 
   const language = (() => {
     if (!tabId) return 'javascript'
@@ -16,6 +20,22 @@ export default function CodeEditor({ tabId }) {
     if (tabId.endsWith('.html')) return 'html'
     return 'plaintext'
   })()
+
+  // Jump to pending cursor when requested by store
+  useEffect(() => {
+    if (!editorRef.current) return
+    if (!pendingCursor) return
+    if (!tabId || pendingCursor.id !== tabId) return
+    const target = { lineNumber: pendingCursor.lineNumber || 1, column: pendingCursor.column || 1 }
+    const editor = editorRef.current
+    try {
+      editor.revealPositionInCenter(target)
+      editor.setPosition(target)
+      editor.focus()
+    } finally {
+      consumePendingCursor()
+    }
+  }, [pendingCursor, tabId, consumePendingCursor])
 
   return (
     <div className="editor">
@@ -32,6 +52,7 @@ export default function CodeEditor({ tabId }) {
           automaticLayout: true,
         }}
         onMount={(editor, monaco) => {
+          editorRef.current = editor
           editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
             save()
           })

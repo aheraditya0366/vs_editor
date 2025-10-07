@@ -94,6 +94,10 @@ export default function Explorer() {
   const tree = useEditorStore((s) => s.tree)
   const openFolder = useEditorStore((s) => s.openFolder)
   const rootDirectoryHandle = useEditorStore((s) => s.rootDirectoryHandle)
+  const createFile = useEditorStore((s) => s.createFile)
+  const createFolder = useEditorStore((s) => s.createFolder)
+  const deleteEntry = useEditorStore((s) => s.deleteEntry)
+  const renameEntry = useEditorStore((s) => s.renameEntry)
   const [contextMenu, setContextMenu] = useState(null)
 
   const handleContextMenu = (e, node) => {
@@ -108,9 +112,38 @@ export default function Explorer() {
     setContextMenu(null)
   }
 
-  const handleMenuAction = (action, node) => {
-    console.log(`${action} on ${node.name}`)
+  const handleMenuAction = async (action, node) => {
     closeContextMenu()
+    if (!node) return
+    if (action === 'open') {
+      // handled by default click
+      return
+    }
+    if (action === 'newFile') {
+      const name = prompt('New file name:')
+      if (!name) return
+      const dirId = node.type === 'folder' ? node.id : node.id.split('/').slice(0, -1).join('/')
+      await createFile(dirId, name)
+      return
+    }
+    if (action === 'newFolder') {
+      const name = prompt('New folder name:')
+      if (!name) return
+      const dirId = node.type === 'folder' ? node.id : node.id.split('/').slice(0, -1).join('/')
+      await createFolder(dirId, name)
+      return
+    }
+    if (action === 'rename') {
+      const name = prompt('Rename to:', node.name)
+      if (!name || name === node.name) return
+      await renameEntry(node.id, node.type, name)
+      return
+    }
+    if (action === 'delete') {
+      if (!confirm(`Delete ${node.name}?`)) return
+      await deleteEntry(node.id, node.type)
+      return
+    }
   }
 
   return (
@@ -175,6 +208,18 @@ export default function Explorer() {
             onClick={() => handleMenuAction('open', contextMenu.node)}
           >
             📁 Open
+          </div>
+          <div
+            className="context-menu-item"
+            onClick={() => handleMenuAction('newFile', contextMenu.node)}
+          >
+            📄 New File
+          </div>
+          <div
+            className="context-menu-item"
+            onClick={() => handleMenuAction('newFolder', contextMenu.node)}
+          >
+            📂 New Folder
           </div>
           <div
             className="context-menu-item"

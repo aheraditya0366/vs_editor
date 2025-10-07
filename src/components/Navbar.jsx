@@ -151,11 +151,14 @@ function QuickOpen() {
 export default function Navbar() {
   const openFolder = useEditorStore((s) => s.openFolder)
   const save = useEditorStore((s) => s.saveActiveFile)
+  const saveAll = useEditorStore((s) => s.saveAllFiles)
   const toggleSidebar = useEditorStore((s) => s.toggleSidebar)
   const toggleTheme = useEditorStore((s) => s.toggleTheme)
   const activeId = useEditorStore((s) => s.activeTabId)
   const layoutMode = useEditorStore((s) => s.layoutMode)
   const setLayoutMode = useEditorStore((s) => s.setLayoutMode)
+  const autosaveEnabled = useEditorStore((s) => s.autosaveEnabled)
+  const toggleAutosave = useEditorStore((s) => s.toggleAutosave)
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -163,11 +166,15 @@ export default function Navbar() {
         e.preventDefault()
         save()
       }
+      if (e.key.toLowerCase() === 's' && (e.metaKey || e.ctrlKey) && e.shiftKey) {
+        e.preventDefault()
+        saveAll()
+      }
     }
 
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [save])
+  }, [save, saveAll])
 
   const layoutButtons = [
     { mode: 'single', title: 'Single Panel', icon: '▭' },
@@ -196,8 +203,13 @@ export default function Navbar() {
         ))}
         <button title="Toggle Theme" onClick={toggleTheme} className="icon-btn" aria-label="Toggle Theme">🌓</button>
         <button title="Toggle Sidebar" onClick={toggleSidebar} className="icon-btn" aria-label="Toggle Sidebar">☰</button>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#aaa' }}>
+          <input type="checkbox" checked={autosaveEnabled} onChange={toggleAutosave} />
+          Autosave
+        </label>
         <button onClick={openFolder} className="primary-btn">Open</button>
         <button onClick={save} disabled={!activeId} className="primary-btn">Save</button>
+        <button onClick={saveAll} className="primary-btn" title="Save All (Ctrl+Shift+S)">Save All</button>
       </div>
     </div>
   )

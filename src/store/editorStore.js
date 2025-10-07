@@ -79,11 +79,81 @@ async function buildFsTree(rootHandle) {
   return { tree: [{ id: rootHandle.name, name: rootHandle.name, type: 'folder', children: root.children }], handles }
 }
 
+// Resolve a directory handle from a relative path like "src/components"
+async function getDirHandleFromPath(rootHandle, dirPath) {
+  if (!rootHandle) return null
+  if (!dirPath || dirPath === '/' || dirPath === rootHandle.name) return rootHandle
+  const parts = dirPath.split('/').filter(Boolean)
+  // If first part equals root name, skip it
+  const startIndex = parts[0] === rootHandle.name ? 1 : 0
+  let current = rootHandle
+  for (let i = startIndex; i < parts.length; i++) {
+    const part = parts[i]
+    current = await current.getDirectoryHandle(part)
+  }
+  return current
+}
+
+function deepCloneTree(nodes) {
+  return nodes.map(n => ({ ...n, children: n.children ? deepCloneTree(n.children) : undefined }))
+}
+
+function addNodeToTree(nodes, dirId, newNode) {
+  return nodes.map(n => {
+    if (n.id === dirId && n.type === 'folder') {
+      const children = n.children ? [...n.children, newNode] : [newNode]
+      return { ...n, children }
+    }
+    if (n.children) {
+      return { ...n, children: addNodeToTree(n.children, dirId, newNode) }
+    }
+    return n
+  })
+}
+
+function removeNodeFromTree(nodes, targetId) {
+  const out = []
+  for (const n of nodes) {
+    if (n.id === targetId) continue
+    if (n.children) {
+      out.push({ ...n, children: removeNodeFromTree(n.children, targetId) })
+    } else {
+      out.push(n)
+    }
+  }
+  return out
+}
+
+function renameNodeInTree(nodes, targetId, newId, newName) {
+  return nodes.map(n => {
+    if (n.id === targetId) {
+      return { ...n, id: newId, name: newName }
+    }
+    if (n.children) {
+      return { ...n, children: renameNodeInTree(n.children, targetId, newId, newName) }
+    }
+    return n
+  })
+}
+
+function pathDirname(path) {
+  const parts = path.split('/')
+  parts.pop()
+  return parts.join('/')
+}
+
+function pathBasename(path) {
+  const parts = path.split('/')
+  return parts.pop()
+}
+
 export const useEditorStore = create((set, get) => ({
   tree: initialTree,
   fileContentMap: initialFiles,
   openTabs: [], // [{ id, path, name, dirty? }]
   activeTabId: null,
+  // Editor jump target, consumed by CodeEditor
+  pendingCursorLocation: null, // { id, lineNumber, column }
   activeTabIdsPerPanel: { // new state to track active tab per panel
     single: null,
     verticalSplitLeft: null,
@@ -113,6 +183,11 @@ export const useEditorStore = create((set, get) => ({
     insertSpaces: true,
     language: 'plaintext',
   },
+  // Autosave
+  autosaveEnabled: false,
+  autosaveDebounceMs: 1200,
+  // Session
+  sessionLoaded: false,
 
   openFolder: async () => {
     if (!window.showDirectoryPicker) {
@@ -133,6 +208,7 @@ export const useEditorStore = create((set, get) => ({
         history: [],
         historyIndex: -1,
       })
+      get().saveSession()
     } catch (e) {
       // cancelled
     }
@@ -168,6 +244,7 @@ export const useEditorStore = create((set, get) => ({
     set({ openTabs: nextTabs, activeTabId: filePath })
     get().pushHistory(filePath)
     get().updatePanelsForLayout()
+    get().saveSession()
   },
 
   closeTab: (id) => {
@@ -175,12 +252,15 @@ export const useEditorStore = create((set, get) => ({
     let nextActive = get().activeTabId
     if (id === nextActive) nextActive = tabs.length ? tabs[tabs.length - 1].id : null
     set({ openTabs: tabs, activeTabId: nextActive })
+    get().updatePanelsForLayout()
+    get().saveSession()
   },
 
   activateTab: (id) => {
     set({ activeTabId: id })
     get().pushHistory(id)
     get().updatePanelsForLayout()
+    get().saveSession()
   },
 
   getActiveContent: () => {
@@ -198,6 +278,10 @@ export const useEditorStore = create((set, get) => ({
     dirty.set(id, true)
     const tabs = get().openTabs.map((t) => (t.id === id ? { ...t, dirty: true } : t))
     set({ fileContentMap: map, dirtyMap: dirty, openTabs: tabs })
+    // Schedule autosave if enabled
+    if (get().autosaveEnabled) {
+      get().scheduleAutosave(id)
+    }
   },
 
   saveActiveFile: async () => {
@@ -213,6 +297,27 @@ export const useEditorStore = create((set, get) => ({
     dirty.set(id, false)
     const tabs = get().openTabs.map((t) => (t.id === id ? { ...t, dirty: false } : t))
     set({ dirtyMap: dirty, openTabs: tabs })
+    get().saveSession()
+  },
+
+  // Save all dirty files with underlying FileSystem handles
+  saveAllFiles: async () => {
+    const dirtyMap = new Map(get().dirtyMap)
+    const updatedTabs = get().openTabs.map((t) => ({ ...t }))
+    for (const [path, isDirty] of dirtyMap.entries()) {
+      if (!isDirty) continue
+      const content = get().fileContentMap.get(path) ?? ''
+      if (get().fileHandles.has(path)) {
+        try {
+          await writeHandleText(get().fileHandles.get(path), content)
+          dirtyMap.set(path, false)
+          const tabIndex = updatedTabs.findIndex((tt) => tt.id === path)
+          if (tabIndex >= 0) updatedTabs[tabIndex].dirty = false
+        } catch {}
+      }
+    }
+    set({ dirtyMap, openTabs: updatedTabs })
+    get().saveSession()
   },
 
   updateEditorStatus: (partial) => {
@@ -258,6 +363,7 @@ export const useEditorStore = create((set, get) => ({
   setLayoutMode: (mode) => {
     set({ layoutMode: mode })
     get().updatePanelsForLayout()
+    get().saveSession()
   },
 
   setActiveTabForPanel: (panel, tabId) => {
@@ -286,10 +392,22 @@ export const useEditorStore = create((set, get) => ({
     set({ activeTabIdsPerPanel })
   },
 
+  // Open a file and request the editor to jump to a location
+  openFileAt: async (path, lineNumber = 1, column = 1) => {
+    set({ pendingCursorLocation: { id: path, lineNumber, column } })
+    await get().openFile(path)
+  },
+
+  // Reset pending cursor request after editor consumes it
+  consumePendingCursorLocation: () => {
+    set({ pendingCursorLocation: null })
+  },
+
   toggleTheme: () => {
     const next = get().theme === 'dark' ? 'light' : 'dark'
     set({ theme: next })
     try { localStorage.setItem('theme', next) } catch {}
+    get().saveSession()
   },
 
   // File listing for quick open
@@ -306,6 +424,199 @@ export const useEditorStore = create((set, get) => ({
     }
     walk(get().tree, '')
     return out
+  },
+
+  // Explorer CRUD operations
+  refreshTree: async () => {
+    const handle = get().rootDirectoryHandle
+    if (!handle) return
+    try {
+      const { tree, handles } = await buildFsTree(handle)
+      set({ tree, fileHandles: handles })
+    } catch {}
+  },
+
+  createFile: async (dirId, name) => {
+    const handle = get().rootDirectoryHandle
+    if (handle) {
+      try {
+        const dirHandle = await getDirHandleFromPath(handle, dirId)
+        const fileHandle = await dirHandle.getFileHandle(name, { create: true })
+        // Initialize empty content
+        await writeHandleText(fileHandle, '')
+        await get().refreshTree()
+      } catch {}
+      return
+    }
+    // In-memory fallback
+    const newPath = dirId ? `${dirId}/${name}` : name
+    const newTree = addNodeToTree(get().tree, dirId, { id: newPath, name, type: 'file' })
+    const map = new Map(get().fileContentMap)
+    map.set(newPath, '')
+    set({ tree: newTree, fileContentMap: map })
+  },
+
+  createFolder: async (dirId, name) => {
+    const handle = get().rootDirectoryHandle
+    if (handle) {
+      try {
+        const dirHandle = await getDirHandleFromPath(handle, dirId)
+        await dirHandle.getDirectoryHandle(name, { create: true })
+        await get().refreshTree()
+      } catch {}
+      return
+    }
+    const newPath = dirId ? `${dirId}/${name}` : name
+    const newTree = addNodeToTree(get().tree, dirId, { id: newPath, name, type: 'folder', children: [] })
+    set({ tree: newTree })
+  },
+
+  deleteEntry: async (nodeId, type) => {
+    const handle = get().rootDirectoryHandle
+    if (handle) {
+      try {
+        const parentPath = pathDirname(nodeId)
+        const name = pathBasename(nodeId)
+        const dirHandle = await getDirHandleFromPath(handle, parentPath)
+        await dirHandle.removeEntry(name, { recursive: type === 'folder' })
+        // Close any open tabs under this path
+        const tabs = get().openTabs.filter(t => !(t.id === nodeId || (type === 'folder' && t.id.startsWith(nodeId + '/'))))
+        let nextActive = get().activeTabId
+        if (!tabs.find(t => t.id === nextActive)) nextActive = tabs.length ? tabs[tabs.length - 1].id : null
+        // Clean maps
+        const fileMap = new Map(get().fileContentMap)
+        const dirtyMap = new Map(get().dirtyMap)
+        for (const key of Array.from(fileMap.keys())) {
+          if (key === nodeId || (type === 'folder' && key.startsWith(nodeId + '/'))) fileMap.delete(key)
+        }
+        for (const key of Array.from(dirtyMap.keys())) {
+          if (key === nodeId || (type === 'folder' && key.startsWith(nodeId + '/'))) dirtyMap.delete(key)
+        }
+        set({ openTabs: tabs, activeTabId: nextActive, fileContentMap: fileMap, dirtyMap })
+        await get().refreshTree()
+        get().updatePanelsForLayout()
+        get().saveSession()
+      } catch {}
+      return
+    }
+    // In-memory fallback
+    const newTree = removeNodeFromTree(get().tree, nodeId)
+    const fileMap = new Map(get().fileContentMap)
+    const dirtyMap = new Map(get().dirtyMap)
+    fileMap.delete(nodeId)
+    dirtyMap.delete(nodeId)
+    set({ tree: newTree, fileContentMap: fileMap, dirtyMap })
+  },
+
+  renameEntry: async (nodeId, type, newName) => {
+    if (!newName) return
+    const handle = get().rootDirectoryHandle
+    if (handle && type === 'file') {
+      try {
+        const parentPath = pathDirname(nodeId)
+        const oldName = pathBasename(nodeId)
+        const dirHandle = await getDirHandleFromPath(handle, parentPath)
+        // Create new file, copy content, remove old
+        const newPath = parentPath ? `${parentPath}/${newName}` : newName
+        const newHandle = await dirHandle.getFileHandle(newName, { create: true })
+        const content = get().fileContentMap.get(nodeId) ?? ''
+        await writeHandleText(newHandle, content)
+        await dirHandle.removeEntry(oldName)
+        // Update tabs and maps
+        const tabs = get().openTabs.map(t => t.id === nodeId ? { ...t, id: newPath, path: newPath, name: newName } : t)
+        const fileMap = new Map(get().fileContentMap)
+        if (fileMap.has(nodeId)) {
+          const text = fileMap.get(nodeId)
+          fileMap.delete(nodeId)
+          fileMap.set(newPath, text)
+        }
+        const dirtyMap = new Map(get().dirtyMap)
+        if (dirtyMap.has(nodeId)) {
+          const dirty = dirtyMap.get(nodeId)
+          dirtyMap.delete(nodeId)
+          dirtyMap.set(newPath, dirty)
+        }
+        let active = get().activeTabId
+        if (active === nodeId) active = newPath
+        set({ openTabs: tabs, fileContentMap: fileMap, dirtyMap, activeTabId: active })
+        await get().refreshTree()
+        get().updatePanelsForLayout()
+        get().saveSession()
+      } catch {}
+      return
+    }
+    // In-memory fallback or unsupported directory rename
+    const parentPath = pathDirname(nodeId)
+    const newId = parentPath ? `${parentPath}/${newName}` : newName
+    const newTree = renameNodeInTree(get().tree, nodeId, newId, newName)
+    const fileMap = new Map(get().fileContentMap)
+    if (type === 'file' && fileMap.has(nodeId)) {
+      const text = fileMap.get(nodeId)
+      fileMap.delete(nodeId)
+      fileMap.set(newId, text)
+    }
+    set({ tree: newTree, fileContentMap: fileMap })
+  },
+
+  // Search across files in the current tree
+  // Returns: [{ path, lineNumber, column, lineText }]
+  searchFiles: async (query, options = {}) => {
+    const { caseSensitive = false, useRegex = false, maxResults = 500 } = options
+    if (!query) return []
+
+    const files = get().listAllFiles()
+    const results = []
+    let pattern
+    try {
+      pattern = useRegex ? new RegExp(query, caseSensitive ? 'g' : 'gi') : null
+    } catch {
+      // Invalid regex; treat as plain text
+      pattern = null
+    }
+
+    const getContent = async (path) => {
+      if (get().fileContentMap.has(path)) {
+        return get().fileContentMap.get(path)
+      }
+      if (get().fileHandles.has(path)) {
+        try {
+          const fh = get().fileHandles.get(path)
+          return await readHandleText(fh)
+        } catch {}
+      }
+      try {
+        const resp = await fetch(`/${path}`)
+        if (resp.ok) return await resp.text()
+      } catch {}
+      return ''
+    }
+
+    for (const file of files) {
+      if (results.length >= maxResults) break
+      const text = await getContent(file.path)
+      if (!text) continue
+      const lines = text.split(/\r?\n/)
+      for (let i = 0; i < lines.length; i++) {
+        if (results.length >= maxResults) break
+        const lineText = lines[i]
+        if (useRegex && pattern) {
+          pattern.lastIndex = 0
+          const match = pattern.exec(lineText)
+          if (match) {
+            const col = (match.index ?? 0) + 1
+            results.push({ path: file.path, lineNumber: i + 1, column: col, lineText })
+          }
+        } else {
+          const haystack = caseSensitive ? lineText : lineText.toLowerCase()
+          const needle = caseSensitive ? query : query.toLowerCase()
+          const idx = haystack.indexOf(needle)
+          if (idx >= 0) {
+            results.push({ path: file.path, lineNumber: i + 1, column: idx + 1, lineText })
+          }
+        }
+      }
+    }
+    return results
   },
 
   // Terminal state and actions
@@ -454,6 +765,67 @@ export const useEditorStore = create((set, get) => ({
         output = `Command not found: ${cmd}\nType 'help' for available commands.`
     }
     return output
+  },
+
+  // Autosave controls
+  setAutosaveEnabled: (enabled) => set({ autosaveEnabled: enabled }),
+  toggleAutosave: () => set({ autosaveEnabled: !get().autosaveEnabled }),
+  scheduleAutosave: (fileId) => {
+    const win = typeof window !== 'undefined' ? window : null
+    if (!win) return
+    const timers = (get().__autosaveTimers ||= new Map())
+    const prev = timers.get(fileId)
+    if (prev) {
+      try { win.clearTimeout(prev) } catch {}
+    }
+    const timeout = win.setTimeout(() => {
+      // Only save if still dirty
+      const dirty = get().dirtyMap.get(fileId)
+      if (dirty) {
+        const prevActive = get().activeTabId
+        set({ activeTabId: fileId })
+        get().saveActiveFile()
+        set({ activeTabId: prevActive })
+      }
+    }, get().autosaveDebounceMs)
+    timers.set(fileId, timeout)
+  },
+
+  // Session persistence
+  saveSession: () => {
+    try {
+      const data = {
+        openTabs: get().openTabs.map(t => t.id),
+        activeTabId: get().activeTabId,
+        layoutMode: get().layoutMode,
+        sidebarVisible: get().sidebarVisible,
+        theme: get().theme,
+        autosaveEnabled: get().autosaveEnabled,
+      }
+      localStorage.setItem('vs_editor_session', JSON.stringify(data))
+    } catch {}
+  },
+  loadSession: async () => {
+    try {
+      const raw = localStorage.getItem('vs_editor_session')
+      if (!raw) return
+      const data = JSON.parse(raw)
+      if (typeof data.autosaveEnabled === 'boolean') set({ autosaveEnabled: data.autosaveEnabled })
+      if (data.layoutMode) set({ layoutMode: data.layoutMode })
+      if (typeof data.sidebarVisible === 'boolean') set({ sidebarVisible: data.sidebarVisible })
+      if (data.theme) set({ theme: data.theme })
+      if (Array.isArray(data.openTabs) && data.openTabs.length > 0) {
+        for (let i = 0; i < data.openTabs.length; i++) {
+          // Sequentially open tabs to populate content map
+          const p = data.openTabs[i]
+          // eslint-disable-next-line no-await-in-loop
+          await get().openFile(p)
+        }
+        if (data.activeTabId) set({ activeTabId: data.activeTabId })
+        get().updatePanelsForLayout()
+      }
+      set({ sessionLoaded: true })
+    } catch {}
   },
 }))
 
