@@ -29,6 +29,8 @@ function App() {
   const [isMobile, setIsMobile] = useState(false)
 
   useEffect(() => {
+    // Load previous session (tabs/layout/theme/autosave) on first mount
+    useEditorStore.getState().loadSession?.()
     if (!activeTabId && openTabs.length === 0) {
       // Open first file in tree automatically
       const firstFile = findFirstFile()

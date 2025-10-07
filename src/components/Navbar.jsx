@@ -157,6 +157,8 @@ export default function Navbar() {
   const activeId = useEditorStore((s) => s.activeTabId)
   const layoutMode = useEditorStore((s) => s.layoutMode)
   const setLayoutMode = useEditorStore((s) => s.setLayoutMode)
+  const autosaveEnabled = useEditorStore((s) => s.autosaveEnabled)
+  const toggleAutosave = useEditorStore((s) => s.toggleAutosave)
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -201,6 +203,10 @@ export default function Navbar() {
         ))}
         <button title="Toggle Theme" onClick={toggleTheme} className="icon-btn" aria-label="Toggle Theme">🌓</button>
         <button title="Toggle Sidebar" onClick={toggleSidebar} className="icon-btn" aria-label="Toggle Sidebar">☰</button>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#aaa' }}>
+          <input type="checkbox" checked={autosaveEnabled} onChange={toggleAutosave} />
+          Autosave
+        </label>
         <button onClick={openFolder} className="primary-btn">Open</button>
         <button onClick={save} disabled={!activeId} className="primary-btn">Save</button>
         <button onClick={saveAll} className="primary-btn" title="Save All (Ctrl+Shift+S)">Save All</button>
