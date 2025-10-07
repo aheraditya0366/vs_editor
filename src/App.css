@@ -1,6 +1,6 @@
 .app {
   display: grid;
-  grid-template-columns: 48px 260px 1fr;
+  grid-template-columns: var(--activity-bar-width, 48px) var(--sidebar-width, 260px) 1fr;
   grid-template-rows: 40px 1fr 26px;
   height: 100vh;
   background: var(--bg);
@@ -29,7 +29,7 @@
 .activity-bar {
   grid-column: 1;
   grid-row: 2;
-  width: 48px;
+  width: var(--activity-bar-width, 48px);
   background: var(--toolbar-bg);
   border-right: 1px solid var(--border);
   display: flex;
@@ -74,7 +74,7 @@
 }
 
 .sidebar {
-  width: 260px;
+  width: var(--sidebar-width, 260px);
   grid-column: 2;
   grid-row: 2;
   border-right: 1px solid var(--border);
@@ -359,7 +359,7 @@
 /* Enhanced Responsive Design */
 @media (max-width: 1200px) {
   .sidebar {
-    width: 220px;
+    width: var(--sidebar-width, 220px);
   }
   .navbar {
     gap: 8px;
@@ -372,7 +372,7 @@
 
 @media (max-width: 900px) {
   .app {
-    grid-template-columns: 48px 1fr;
+    grid-template-columns: var(--activity-bar-width, 48px) 1fr;
   }
   .sidebar {
     width: 100%;
@@ -391,6 +391,7 @@
   .sidebar.open {
     transform: translateX(0);
   }
+  .sidebar-resizer { display: none; }
   .workbench {
     grid-column: 2 / span 2;
   }
@@ -500,7 +501,7 @@
 .terminal-container {
   position: fixed;
   bottom: 26px;
-  left: 308px;
+  left: calc(var(--activity-bar-width, 48px) + var(--sidebar-width, 260px));
   right: 0;
   height: 200px;
   background-color: var(--panel-bg);
@@ -516,10 +517,10 @@
 }
 
 .app.sidebar-open .terminal-container {
-  left: 308px;
+  left: calc(var(--activity-bar-width, 48px) + var(--sidebar-width, 260px));
 }
 .app.sidebar-hidden .terminal-container {
-  left: 48px;
+  left: var(--activity-bar-width, 48px);
 }
 .app.mobile .terminal-container {
   left: 0;
@@ -531,6 +532,20 @@
   cursor: row-resize;
   position: relative;
   transition: background 160ms ease;
+}
+
+/* Sidebar resizer */
+.sidebar-resizer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  background: transparent;
+}
+.sidebar-resizer:hover {
+  background: var(--hover);
 }
 
 .terminal-resizer:hover {

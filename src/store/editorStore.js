@@ -172,6 +172,7 @@ export const useEditorStore = create((set, get) => ({
   history: [], // array of tab ids
   historyIndex: -1,
   sidebarVisible: true,
+  sidebarWidth: 260,
   activeView: 'explorer', // 'explorer', 'search', 'sourceControl', 'runAndDebug', 'extensions', 'accounts'
   theme: (typeof window !== 'undefined' && localStorage.getItem('theme')) || 'dark',
   layoutMode: 'single', // 'single', 'vertical-split', 'horizontal-split', 'grid'
@@ -355,6 +356,14 @@ export const useEditorStore = create((set, get) => ({
     }
   },
   toggleSidebar: () => set({ sidebarVisible: !get().sidebarVisible }),
+
+  setSidebarWidth: (widthPx) => {
+    const minWidth = 180
+    const maxWidth = 600
+    const clamped = Math.max(minWidth, Math.min(maxWidth, Math.round(widthPx)))
+    set({ sidebarWidth: clamped })
+    get().saveSession()
+  },
 
   setActiveView: (view) => set({ activeView: view }),
 
@@ -799,6 +808,7 @@ export const useEditorStore = create((set, get) => ({
         activeTabId: get().activeTabId,
         layoutMode: get().layoutMode,
         sidebarVisible: get().sidebarVisible,
+        sidebarWidth: get().sidebarWidth,
         theme: get().theme,
         autosaveEnabled: get().autosaveEnabled,
       }
@@ -813,6 +823,7 @@ export const useEditorStore = create((set, get) => ({
       if (typeof data.autosaveEnabled === 'boolean') set({ autosaveEnabled: data.autosaveEnabled })
       if (data.layoutMode) set({ layoutMode: data.layoutMode })
       if (typeof data.sidebarVisible === 'boolean') set({ sidebarVisible: data.sidebarVisible })
+      if (typeof data.sidebarWidth === 'number' && !Number.isNaN(data.sidebarWidth)) set({ sidebarWidth: data.sidebarWidth })
       if (data.theme) set({ theme: data.theme })
       if (Array.isArray(data.openTabs) && data.openTabs.length > 0) {
         for (let i = 0; i < data.openTabs.length; i++) {

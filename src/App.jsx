@@ -12,7 +12,7 @@ import RunAndDebug from './components/RunAndDebug.jsx'
 import Extensions from './components/Extensions.jsx'
 import Accounts from './components/Accounts.jsx'
 import { useEditorStore } from './store/editorStore.js'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import LayoutButtons from './components/LayoutButtons.jsx'
 
 function App() {
@@ -27,6 +27,11 @@ function App() {
   const openFile = useEditorStore((s) => s.openFile)
   const updatePanelsForLayout = useEditorStore((s) => s.updatePanelsForLayout)
   const [isMobile, setIsMobile] = useState(false)
+  const sidebarWidth = useEditorStore((s) => s.sidebarWidth)
+  const setSidebarWidth = useEditorStore((s) => s.setSidebarWidth)
+  const isResizingRef = useRef(false)
+  const startXRef = useRef(0)
+  const startWidthRef = useRef(0)
 
   useEffect(() => {
     // Load previous session (tabs/layout/theme/autosave) on first mount
@@ -141,8 +146,31 @@ function App() {
     }
   }
 
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      if (!isResizingRef.current) return
+      const dx = e.clientX - startXRef.current
+      const newWidth = startWidthRef.current + dx
+      setSidebarWidth(newWidth)
+    }
+    const handleMouseUp = () => {
+      if (isResizingRef.current) {
+        isResizingRef.current = false
+      }
+    }
+    window.addEventListener('mousemove', handleMouseMove)
+    window.addEventListener('mouseup', handleMouseUp)
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [setSidebarWidth])
+
   return (
-    <div className={`app theme-${theme} ${terminalVisible ? 'terminal-visible' : ''} ${isMobile ? 'mobile' : ''} ${sidebarVisible ? 'sidebar-open' : 'sidebar-hidden'}`}>
+    <div
+      className={`app theme-${theme} ${terminalVisible ? 'terminal-visible' : ''} ${isMobile ? 'mobile' : ''} ${sidebarVisible ? 'sidebar-open' : 'sidebar-hidden'}`}
+      style={{ '--sidebar-width': `${sidebarWidth}px`, '--activity-bar-width': '48px' }}
+    >
       <Navbar />
       <ActivityBar onToggleSidebar={handleToggleSidebar} />
       <aside className={`sidebar ${sidebarVisible ? 'open' : 'hidden'}`}>
@@ -152,6 +180,19 @@ function App() {
         {activeView === 'runAndDebug' && <RunAndDebug />}
         {activeView === 'extensions' && <Extensions />}
         {activeView === 'accounts' && <Accounts />}
+        {!isMobile && (
+          <div
+            className="sidebar-resizer"
+            onMouseDown={(e) => {
+              isResizingRef.current = true
+              startXRef.current = e.clientX
+              startWidthRef.current = sidebarWidth
+            }}
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize sidebar"
+          />
+        )}
       </aside>
       <section className="workbench">
         {renderLayout()}
