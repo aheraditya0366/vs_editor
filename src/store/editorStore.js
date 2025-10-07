@@ -186,6 +186,8 @@ export const useEditorStore = create((set, get) => ({
   // Autosave
   autosaveEnabled: false,
   autosaveDebounceMs: 1200,
+  // Session
+  sessionLoaded: false,
 
   openFolder: async () => {
     if (!window.showDirectoryPicker) {
@@ -822,6 +824,7 @@ export const useEditorStore = create((set, get) => ({
         if (data.activeTabId) set({ activeTabId: data.activeTabId })
         get().updatePanelsForLayout()
       }
+      set({ sessionLoaded: true })
     } catch {}
   },
 }))
