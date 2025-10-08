@@ -269,8 +269,8 @@ export const useEditorStore = create((set, get) => ({
     return get().fileContentMap.get(id) ?? ''
   },
 
-  updateActiveContent: (newValue) => {
-    const id = get().activeTabId
+  updateActiveContent: (newValue, targetId) => {
+    const id = targetId || get().activeTabId
     if (!id) return
     const map = new Map(get().fileContentMap)
     map.set(id, newValue)
